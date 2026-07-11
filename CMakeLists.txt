@@ -26,10 +26,19 @@ target_include_directories(MyLib PUBLIC
 )
 
 # imgui
-file(GLOB IMGUI_SOURCES "lib/imgui/*.cpp")
+set(IMGUI_SOURCES
+    lib/imgui/imgui.cpp
+    lib/imgui/imgui_draw.cpp
+    lib/imgui/imgui_tables.cpp
+    lib/imgui/imgui_widgets.cpp
+    lib/imgui/imgui_demo.cpp
+    lib/imgui/backends/imgui_impl_glfw.cpp
+    lib/imgui/backends/imgui_impl_opengl3.cpp
+)
 add_library(imgui STATIC ${IMGUI_SOURCES})
 target_include_directories(imgui PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/backends>
     $<INSTALL_INTERFACE:include>
 )
 
@@ -78,7 +87,14 @@ install(DIRECTORY lib/imgui/ DESTINATION include
     FILES_MATCHING 
     PATTERN "*.h"
     PATTERN "*.hpp"
-    # PATTERN "*.cpp"  # imgui通常需要cpp文件一起安装
+    PATTERN "backends" EXCLUDE  # 排除子目录
+)
+
+
+install(DIRECTORY lib/imgui/backends/ DESTINATION include
+    FILES_MATCHING 
+    PATTERN "*.h"
+    PATTERN "*.hpp"
 )
 
 

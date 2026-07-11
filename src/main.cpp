@@ -14,8 +14,10 @@ using namespace jsonview;
 namespace fs = std::filesystem;
 
 
-//g++ -static -static-libgcc -static-libstdc++ -Ibuild/install/include src/main.cpp build/install/lib/*.a -lws2_32 -lgdi32 -mwindows -o main.exe
-
+/*
+g++ -static -static-libgcc -static-libstdc++ -Ibuild/install/include src/main.cpp build/install/lib/*.a -lws2_32 -lgdi32 -mwindows -o main.exe
+g++ -Ibuild/install/include src/main.cpp build/install/lib/*.a -lGL -lX11 -lpthread -lXrandr -lXi -ldl -lXinerama -lXcursor
+*/
 
 
 Json get_json( const char* json_file ) {
