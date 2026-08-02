@@ -4,7 +4,7 @@
 
 This project relies on a few 3rd libraries:
 1. glfw (from https://www.glfw.org);
-2. glad2 (from https://gen.glad.sh, choose core GL 3.3, and with a loader);
+2. glad2 (from https://gen.glad.sh, choose core GL 3.3, toggle "loader" and "mx" in Optional);
 3. imgui (from https://github.com/ocornut/imgui).
 
 
@@ -49,8 +49,14 @@ Use `cd` to enter project root directory.
 Follow the [compile guide](https://www.glfw.org/docs/latest/compile_guide.html) of glfw. Basically, in this project, you need to do following:
 ```
 cmake -S . -B build
-cmake --build build -j 8 --config Release
+cmake --build build --parallel --config Release
 cmake --install build
+```
+
+After that, if you want to compile main.cpp individually, run (one for msys2 and one for linux):
+```
+g++ -static -static-libgcc -static-libstdc++ -Ibuild/install/include src/main.cpp build/install/lib/*.a -lws2_32 -lgdi32 -mwindows -o main.exe
+g++ -Ibuild/install/include src/main.cpp build/install/lib/*.a -lGL -lX11 -lpthread -lXrandr -lXi -ldl -lXinerama -lXcursor
 ```
 
 ## Run

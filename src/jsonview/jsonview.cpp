@@ -39,7 +39,24 @@ void pop_up_window( bool pop_up ) {
 
 
 
-bool JsonViewer::dowork( void* ) {
+bool JsonViewer::loop( int ) {
+
+    static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
+                                    ImGuiWindowFlags_NoCollapse |
+                                    ImGuiWindowFlags_NoMove |
+                                    ImGuiWindowFlags_NoResize |
+                                    ImGuiWindowFlags_NoSavedSettings |
+                                    ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+    // We demonstrate using the full viewport area or the work area (without menu-bars, task-bars etc.)
+    // Based on your use case you may want one or the other.
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.8f, 0.9f, 0.8f, 1.0f));
+    ImGui::Begin("Fullscreen window", nullptr, flags);
+    ImGui::PopStyleColor();
 
     ImGui::AlignTextToFramePadding();
     ImGui::Text("Copy all");
@@ -79,7 +96,7 @@ bool JsonViewer::dowork( void* ) {
         ImGui::EndTabBar();
     }
 
-
+    ImGui::End();
     return true;
 }
 

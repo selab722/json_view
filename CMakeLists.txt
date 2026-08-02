@@ -61,8 +61,8 @@ target_link_libraries(imgui glad2)
 
 
 # executable
-add_executable(jsonview src/main.cpp)
-target_link_libraries(jsonview MyLib)
+add_executable(test1 src/test1.cpp)
+target_link_libraries(test1 MyLib)
 
 
 # ========== Install configuration ==========

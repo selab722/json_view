@@ -2,20 +2,20 @@
 #define JSONVIEW_JSONVIEW_H
 
 
-#include "ave/gui/imgui_window.h"
+#include "ave/gui/opengl_window.h"
 #include "json/json.h"
 #include "jsonview/jsoncollapse.h"
 
 
 namespace jsonview {
 
-class JsonViewer : public ave::ImGuiWindowRunner {
+class JsonViewer : public ave::Runner {
 public:
     std::vector<std::pair<std::string, JsonCollapse>> jsonIds;
 
     // constructor will take control of this json.
     // after that this argument json will be null.
-    JsonViewer(std::string save_file, bool fps = false) : ImGuiWindowRunner(save_file, fps), selected_json(nullptr) {}
+    JsonViewer() : selected_json(nullptr) {}
 
     void add_json( const std::string& name, json::Json json ) {
         // std::cout<<json<<std::endl;
@@ -23,7 +23,7 @@ public:
     }
 
     // return if continue
-    virtual bool dowork( void* );
+    virtual bool loop( int );
 
     // cannot copy, but ok to move
     JsonViewer(const JsonViewer&) = delete;
