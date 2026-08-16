@@ -63,6 +63,6 @@ g++ -Ibuild/install/include src/main.cpp build/install/lib/*.a -lGL -lX11 -lpthr
 
 Find executable in `build/Release` directory if you use Windows or `build` if you use Linux. On wsl there is something wrong, I tried
 ```
-cmake -S . -B build -DGLFW_BUILD_WAYLAND=OFF && cmake --build build -j 8 --config Release
+cmake -S . -B build -DGLFW_BUILD_WAYLAND=OFF && cmake --build build --parallel --config Release
 cmake --install build
 ```

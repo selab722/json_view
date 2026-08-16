@@ -1,6 +1,6 @@
 #include <iostream>
 #include <filesystem>
-#include "ave/gui/opengl_window.h"
+#include "ave/gui/window/opengl_window.h"
 #include "jsonview/jsonview.h"
 
 using std::cout;
@@ -83,7 +83,7 @@ int main( int argc, char** argv ) {
         framework->set_runner(std::move(window));
     }
 
-    while( framework->loop(0) );
+    while( framework->loop(1) );
 
 
     return 0;

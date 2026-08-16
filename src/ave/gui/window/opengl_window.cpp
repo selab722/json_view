@@ -1,10 +1,11 @@
 
 #include <iostream>
 #include <limits>
+#include <glad/gl.h>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
-#include "ave/gui/opengl_window.h"
+#include "ave/gui/window/opengl_window.h"
 
 using std::cerr;
 using std::cout;
@@ -167,9 +168,8 @@ GlWindow::~GlWindow() {
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-
     ImGui::DestroyContext(imgui_context_);
+
     imgui_context_ = nullptr;
     glfwDestroyWindow(window_);
     window_ = nullptr;
