@@ -34,11 +34,13 @@ set(IMGUI_SOURCES
     lib/imgui/imgui_demo.cpp
     lib/imgui/backends/imgui_impl_glfw.cpp
     lib/imgui/backends/imgui_impl_opengl3.cpp
+    lib/imgui/misc/cpp/imgui_stdlib.cpp
 )
 add_library(imgui STATIC ${IMGUI_SOURCES})
 target_include_directories(imgui PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/backends>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/misc/cpp>
     $<INSTALL_INTERFACE:include>
 )
 
@@ -63,6 +65,9 @@ target_link_libraries(imgui glad2)
 # executable
 add_executable(test1 src/test1.cpp)
 target_link_libraries(test1 MyLib)
+
+add_executable(test2 src/test2.cpp)
+target_link_libraries(test2 MyLib)
 
 
 # ========== Install configuration ==========

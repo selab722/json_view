@@ -1,5 +1,5 @@
-#ifndef AVE_GUI_SAVE__CONFIG_H
-#define AVE_GUI_SAVE__CONFIG_H
+#ifndef AVE_GUI_WINDOW_SAVE__CONFIG_H
+#define AVE_GUI_WINDOW_SAVE__CONFIG_H
 
 #include <string>
 #include <fstream>

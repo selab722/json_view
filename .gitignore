@@ -71,3 +71,7 @@ Testing/
 # others
 lib/
 .vscode/
+.opencode/
+*.otf
+*.ttf
+compile.sh

@@ -1,6 +1,6 @@
 #include <iostream>
 #include <filesystem>
-#include "ave/gui/opengl_window.h"
+#include "ave/gui/window/opengl_window.h"
 #include "jsonview/jsonview.h"
 
 using std::cout;
@@ -39,16 +39,6 @@ Json empty_json() {
     return parser.get();
 }
 
-string combine_path(const char* path, const char* file) {
-    try {
-        fs::path exe_path = fs::absolute(path);
-        return (exe_path.parent_path() / file).string();
-    } catch (const std::exception& e) {
-        std::cerr << "bin path error: " << e.what() << endl;
-        return "";
-    }
-}
-
 
 int main( int argc, char** argv ) {
 
@@ -60,7 +50,7 @@ int main( int argc, char** argv ) {
     }
 
     {
-        string font_path = argc ? combine_path(argv[0], "SourceHanSansSC-Regular.otf") : "SourceHanSansSC-Regular.otf";
+        string font_path = (fs::path(argv[0]).parent_path()/"SourceHanSansSC-Regular.otf").u8string();
         const char* init_args[] = {
             font_path.c_str(),
             "res/SourceHanSansSC-Regular.otf",
@@ -69,7 +59,7 @@ int main( int argc, char** argv ) {
             ""
         };
         unique_ptr<GlWindow> window =
-                std::make_unique<GlWindow>(argc ? combine_path(argv[0], "file.ini") : "");
+                std::make_unique<GlWindow>((fs::path(argv[0]).parent_path()/"file.ini").u8string());
         window->title_ = "Test";
         if( !window->init(init_args, 22) )
             return -1;
@@ -83,7 +73,7 @@ int main( int argc, char** argv ) {
         framework->set_runner(std::move(window));
     }
 
-    while( framework->loop(0) );
+    while( framework->loop(1) );
 
 
     return 0;

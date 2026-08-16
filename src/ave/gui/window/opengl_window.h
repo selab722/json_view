@@ -1,13 +1,11 @@
-#ifndef AVE_GUI_OPENGL__WINDOW_H
-#define AVE_GUI_OPENGL__WINDOW_H
-
+#ifndef AVE_GUI_WINDOW_OPENGL__WINDOW_H
+#define AVE_GUI_WINDOW_OPENGL__WINDOW_H
 
 #include <string>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
-#include <glad/gl.h>
 #include "imgui.h"
-#include "ave/gui/save_config.h"
+#include "ave/gui/window/save_config.h"
 #include "ave/core/engine.h"
 
 
@@ -76,4 +74,4 @@ public:
 
 }  // namespace ave
 
-#endif  // #ifndef AVE_GUI_OPENGL__WINDOW_H
+#endif  // #ifndef AVE_GUI_WINDOW_OPENGL__WINDOW_H

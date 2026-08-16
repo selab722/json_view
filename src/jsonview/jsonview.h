@@ -2,7 +2,7 @@
 #define JSONVIEW_JSONVIEW_H
 
 
-#include "ave/gui/opengl_window.h"
+#include "ave/gui/window/opengl_window.h"
 #include "json/json.h"
 #include "jsonview/jsoncollapse.h"
 
