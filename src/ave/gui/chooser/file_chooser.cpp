@@ -55,7 +55,11 @@ bool FileChooser::show() {
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
 
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.6f, 0.75f, 0.85f, 1));
     if (ImGui::BeginPopupModal("选择文件", &is_open_, ImGuiWindowFlags_NoCollapse)) {
+
+        render_toolbar();
+
         ImGui::BeginChild("Sidebar", ImVec2(200, 0), ImGuiChildFlags_ResizeX);
 
         render_sidebar();
@@ -64,15 +68,15 @@ bool FileChooser::show() {
 
         ImGui::BeginChild("MainContent");
 
-        render_toolbar();
         render_file_list();
         if( is_open_ )
             render_footer();
 
         ImGui::EndChild();
-
         ImGui::EndPopup();
     }
+    ImGui::PopStyleColor();
+
     return !is_open_ && !selected_paths_.empty();
 }
 
@@ -112,94 +116,86 @@ void FileChooser::render_toolbar() {
 }
 
 void FileChooser::render_file_list() {
-    ImGui::BeginChild("FileListHeader", ImVec2(0, 30), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+    float availHeight = std::max(ImGui::GetContentRegionAvail().y - 60.0f, 100.0f);
 
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+    ImGui::BeginChild("FileListTable", ImVec2(0, availHeight), ImGuiChildFlags_Borders);
 
-    ImGui::SetCursorPosX(0);
-    ImGui::Text(" ");
-    ImGui::SameLine();
+    if (ImGui::BeginTable("FileTable", 4,
+                          ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY |
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter |
+                          ImGuiTableFlags_NoSavedSettings)) {
 
-    ImGui::SetCursorPosX(30);
-    ImGui::Selectable("名称呢", false, ImGuiSelectableFlags_None, ImVec2(column_widths_[0] * ImGui::GetWindowWidth(), 0));
-    ImGui::SameLine();
+        ImGui::TableSetupColumn("名称", ImGuiTableColumnFlags_WidthStretch, column_widths_[0]);
+        ImGui::TableSetupColumn("类型", ImGuiTableColumnFlags_WidthStretch, column_widths_[1]);
+        ImGui::TableSetupColumn("大小", ImGuiTableColumnFlags_WidthStretch, column_widths_[2]);
+        ImGui::TableSetupColumn("修改时间", ImGuiTableColumnFlags_WidthStretch, column_widths_[3]);
+        ImGui::TableHeadersRow();
 
-    ImGui::SetCursorPosX(30 + column_widths_[0] * ImGui::GetWindowWidth());
-    ImGui::Selectable("类型呢", false, ImGuiSelectableFlags_None, ImVec2(column_widths_[1] * ImGui::GetWindowWidth(), 0));
-    ImGui::SameLine();
+        for (FileItem &item : file_items_) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
 
-    ImGui::SetCursorPosX(30 + (column_widths_[0] + column_widths_[1]) * ImGui::GetWindowWidth());
-    ImGui::Selectable("大小呢", false, ImGuiSelectableFlags_None, ImVec2(column_widths_[2] * ImGui::GetWindowWidth(), 0));
-    ImGui::SameLine();
+            ImGui::Text("%c", item.is_directory ? '>' : ' ');
+            ImGui::SameLine();
 
-    ImGui::SetCursorPosX(30 + (column_widths_[0] + column_widths_[1] + column_widths_[2]) * ImGui::GetWindowWidth());
-    ImGui::Selectable("修改时间呢", false, ImGuiSelectableFlags_None, ImVec2(column_widths_[3] * ImGui::GetWindowWidth(), 0));
-
-    ImGui::PopStyleVar();
-    ImGui::EndChild();
-
-    ImGui::BeginChild("FileList", ImVec2(0, -60), ImGuiChildFlags_Borders);
-
-    for (FileItem &item : file_items_) {
-        ImGui::PushID(&item);
-
-        bool isSelected = item.is_selected;
-
-        ImGui::SetCursorPosX(5);
-        if (item.is_directory)
-            ImGui::Text(">");
-        else
-            ImGui::Text(" ");
-        ImGui::SameLine();
-
-        ImGui::SetCursorPosX(30);
-        if (ImGui::Selectable(item.name.c_str(), &isSelected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
-            if (ImGui::IsMouseDoubleClicked(0)) {
-                if (item.is_directory) {
-                    navigate_to(item.path);
-                    file_name_input_ = current_directory_.u8string();
-                } else
-                    select_item(item.path);
-            } else if (ImGui::IsItemClicked()) {
-                if (multiple_selection_ && ImGui::GetIO().KeyCtrl)
-                    item.is_selected = !item.is_selected;
-                else {
-                    for (FileItem &other : file_items_)
-                        other.is_selected = false;
-                    item.is_selected = true;
-                    selected_path_ = item.path;
-                    file_name_input_ = item.name;
+            // 可点击的文件名
+            ImGui::PushID(&item);
+            if (ImGui::Selectable(item.name.c_str(), &item.is_selected,
+                                  ImGuiSelectableFlags_SpanAllColumns |
+                                  ImGuiSelectableFlags_AllowDoubleClick)) {
+                // 双击或单击逻辑（与原代码一致）
+                if (ImGui::IsMouseDoubleClicked(0)) {
+                    if (item.is_directory)
+                        navigate_to(current_directory_/item.path);
+                    else
+                        select_item(item.path);
+                } else {
+                    cout<<"debug"<<endl;
+                    if (multiple_selection_ && ImGui::GetIO().KeyCtrl)
+                        item.is_selected = !item.is_selected;
+                    else {
+                        for (FileItem &other : file_items_)
+                            other.is_selected = false;
+                        item.is_selected = true;
+                        file_name_input_ = item.name;
+                    }
                 }
             }
+            ImGui::PopID();
+
+            // 第二列：类型
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%s", item.type.c_str());
+
+            // 第三列：大小
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%s", item.size.c_str());
+
+            // 第四列：修改时间
+            ImGui::TableSetColumnIndex(3);
+            ImGui::Text("%s", item.modified_time.c_str());
         }
-
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(30 + column_widths_[0] * ImGui::GetWindowWidth());
-        ImGui::Text("%s", item.type.c_str());
-
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(30 + (column_widths_[0] + column_widths_[1]) * ImGui::GetWindowWidth());
-        ImGui::Text("%s", item.size.c_str());
-
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(30 + (column_widths_[0] + column_widths_[1] + column_widths_[2]) * ImGui::GetWindowWidth());
-        ImGui::Text("%s", item.modified_time.c_str());
-
-        ImGui::PopID();
-        if( !is_open_ )
-            break;
+        ImGui::EndTable();
     }
-
     ImGui::EndChild();
 }
 
 void FileChooser::select_item(const fs::path& path) {
+    if( path.empty() ) {
+        if(multiple_selection_)
+            is_open_ = false;
+        else if( selection_mode_==SelectionMode::DirectoriesOnly ) {
+            is_open_ = false;
+            selected_path_ = current_directory_;
+            file_items_.clear();
+        }
+    }
     if( fs::is_directory(path) && (selection_mode_==SelectionMode::FilesOnly
                                 || selection_mode_==SelectionMode::SaveFile) ) {
-        navigate_to(path);
-        file_name_input_ = current_directory_.u8string();
+        navigate_to(current_directory_ / path);
         return;
-    } else if( !fs::is_directory(path) && selection_mode_==SelectionMode::DirectoriesOnly )
+    }
+    if( !fs::is_directory(path) && selection_mode_==SelectionMode::DirectoriesOnly )
         return;
     bool found = false;
     if (selection_mode_==SelectionMode::SaveFile)
@@ -212,12 +208,10 @@ void FileChooser::select_item(const fs::path& path) {
             }
     if( !found )
         return;
-    selected_path_ = path;
-    file_name_input_ = path.filename().u8string();
+    selected_path_ = current_directory_ / path;
     is_open_ = false;
     if( !multiple_selection_ )
-        for( FileItem& item : file_items_ )
-            item.is_selected = false;
+        file_items_.clear();
 }
 
 void FileChooser::render_footer() {
@@ -225,7 +219,7 @@ void FileChooser::render_footer() {
     ImGui::SameLine();
     ImGui::PushItemWidth(300);
     if ( ImGui::InputText("##FileName", &file_name_input_, ImGuiInputTextFlags_EnterReturnsTrue) )
-        select_item(current_directory_ / file_name_input_);
+        select_item(file_name_input_);
     ImGui::PopItemWidth();
 
     if( !is_open_ )
@@ -234,8 +228,8 @@ void FileChooser::render_footer() {
     ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 160);
 
     const string btn_text = (selection_mode_==SelectionMode::SaveFile) ? "保存" : "打开";
-    if( ImGui::Button(btn_text.c_str(), ImVec2(70, 0)) && !file_name_input_.empty() )
-        select_item(current_directory_/file_name_input_);
+    if( ImGui::Button(btn_text.c_str(), ImVec2(70, 0)) )
+        select_item(file_name_input_);
 
     ImGui::SameLine();
     if (ImGui::Button("取消", ImVec2(70, 0))) {
@@ -294,6 +288,7 @@ void FileChooser::render_sidebar() {
 
 void FileChooser::load_directory() {
     file_items_.clear();
+    file_name_input_.clear();
 
     try {
         for (const fs::directory_entry &entry : fs::directory_iterator(current_directory_)) {
@@ -307,8 +302,8 @@ void FileChooser::load_directory() {
                 continue;
 
             FileItem item;
-            item.path = entry.path();
-            item.name = entry.path().filename().string();
+            item.path = entry.path().filename();
+            item.name = item.path.u8string();
             item.is_directory = entry.is_directory();
             item.is_selected = false;
 
@@ -422,7 +417,7 @@ std::vector<fs::path> FileChooser::get_selected_files() const {
     std::vector<fs::path> result;
     for (const auto &item : file_items_)
         if (item.is_selected)
-            result.push_back(item.path);
+            result.push_back(current_directory_ / item.path);
     return result;
 }
 

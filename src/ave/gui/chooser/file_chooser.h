@@ -15,7 +15,6 @@ public:
     enum class SelectionMode {
         FilesOnly,               // choose one file
         DirectoriesOnly,         // choose one directory
-        FileOrDirectories,       // choose multiple 
         SaveFile                 // save mode, single file
     };
 
