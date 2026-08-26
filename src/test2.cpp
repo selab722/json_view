@@ -34,34 +34,47 @@ public:
 
         ImGui::Begin("Fullscreen window", nullptr, flags);
 
-        bool shown = false;
-        if( (shown = fc.is_open()) ) {
+        if( fc.is_open() ) {
             // cout<<"mul: "<<fc.is_multiple_selection()<<endl;
             fc.show();
         }
 
-        if( ImGui::Button("Single File") && !shown ) {
+        if( ImGui::Button("Single File") ) {
             fc.reset(true);
             fc.set_selection_mode(FileChooser::SelectionMode::FilesOnly);
             fc.set_multiple_selection(false);
             fc.show();
-            shown = true;
         }
 
-        if( ImGui::Button("Multiple File") && !shown ) {
+        if( ImGui::Button("Multiple File") ) {
             fc.reset(true);
             fc.set_selection_mode(FileChooser::SelectionMode::FilesOnly);
             fc.set_multiple_selection(true);
-            // cout<<"fc reset mul: "<<fc.is_multiple_selection();
             fc.show();
-            // cout<<"  "<<fc.is_multiple_selection()<<endl;
-            shown = true;
+        }
+
+        if( ImGui::Button("Single Dir") ) {
+            fc.reset(true);
+            fc.set_selection_mode(FileChooser::SelectionMode::DirectoriesOnly);
+            fc.set_multiple_selection(false);
+            fc.show();
+        }
+
+        if( ImGui::Button("Multiple Dir") ) {
+            fc.reset(true);
+            fc.set_selection_mode(FileChooser::SelectionMode::DirectoriesOnly);
+            fc.set_multiple_selection(true);
+            fc.show();
         }
 
         if( fc.get_selected_file().empty() )
             ImGui::Text("Unselected");
         else
             ImGui::Text("%s", fc.get_selected_file().string().c_str());
+
+        vector<fs::path> selected = fc.get_selected_files();
+        for( int i = 0; i < selected.size(); i ++ )
+            ImGui::Text("%d %s", i, selected[i].u8string().c_str());
 
         ImGui::End();
         return true;

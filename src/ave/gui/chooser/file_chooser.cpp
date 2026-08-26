@@ -56,7 +56,7 @@ bool FileChooser::show() {
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
 
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.7f, 0.85f, 0.80f, 1));
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.8f, 0.9f, 0.8f, 1));
     if( ImGui::BeginPopupModal("选择文件", &is_open_, ImGuiWindowFlags_NoCollapse) ) {
 
         render_toolbar();
@@ -172,14 +172,14 @@ void FileChooser::single_click( FileItem& item, bool ctrl_down ) {
     if( multiple_selection_ && ctrl_down ) {
         item.is_selected = !item.is_selected;
         if( item.is_selected && selected_path_.empty() )
-            selected_path_ = item.path;
+            selected_path_ = current_directory_ / item.path;
     } else {
         for( FileItem &other : file_items_ )
             other.is_selected = false;
         file_name_input_ = item.name;
         item.is_selected = true;
         if( multiple_selection_ && selected_path_.empty() )
-            selected_path_ = item.path;
+            selected_path_ = current_directory_ / item.path;
     }
 }
 
