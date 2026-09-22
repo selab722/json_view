@@ -15,6 +15,10 @@ using std::vector;
 namespace fs = std::filesystem;
 
 #ifdef _WIN32
+// windows.h 默认定义 min/max 宏，会破坏本文件中 std::max 等调用（MSVC 报 C2589）。
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 
@@ -91,12 +95,22 @@ void FileChooser::render_toolbar() {
     if( ImGui::Button("刷新") )
         load_directory();
     ImGui::SameLine();
-    ImGui::PushItemWidth(300);
+
+    // 路径框占满一行：为右侧的 Filter 组合框和"显示隐藏"复选框预留宽度
+    const ImGuiStyle &style = ImGui::GetStyle();
+    const float filter_width = 150.0f;
+    const float hidden_text_width = ImGui::CalcTextSize("显示隐藏").x;
+    const float checkbox_width = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + hidden_text_width;
+    // 路径框与其后每个控件之间的间隔，以及组合框与复选框之间的间隔
+    const float reserve = filter_width + checkbox_width + style.ItemSpacing.x * 2.0f;
+
+    // 负值宽度表示"从右边界向左预留 reserve 像素"，随窗口宽度自适应
+    ImGui::SetNextItemWidth(-reserve);
     if( ImGui::InputText("##Path", &top_dir_input_, ImGuiInputTextFlags_EnterReturnsTrue) )
         navigate_to(top_dir_input_);
-    ImGui::PopItemWidth();
     ImGui::SameLine();
-    ImGui::PushItemWidth(150);
+
+    ImGui::SetNextItemWidth(filter_width);
     if( ImGui::BeginCombo("##Filter", current_filter_.c_str()) ) {
         for( const auto &filter : filters_ )
             if( ImGui::Selectable(filter.c_str(), filter == current_filter_) ) {
@@ -105,7 +119,6 @@ void FileChooser::render_toolbar() {
             }
         ImGui::EndCombo();
     }
-    ImGui::PopItemWidth();
     ImGui::SameLine();
     if (ImGui::Checkbox("显示隐藏", &show_hidden_files_))
         load_directory();
@@ -225,22 +238,27 @@ void FileChooser::select_item(const fs::path& path) {
 void FileChooser::render_footer() {
     ImGui::Text("文件名:");
     ImGui::SameLine();
-    ImGui::PushItemWidth(300);
-    if ( ImGui::InputText("##FileName", &file_name_input_, ImGuiInputTextFlags_EnterReturnsTrue) )
+
+    // 文件名框占满一行：为右侧的"打开/保存"与"取消"两个按钮预留宽度
+    const ImGuiStyle &style = ImGui::GetStyle();
+    const float button_width = 70.0f;
+    // 文件名框与第一个按钮、以及两个按钮之间的间隔
+    const float reserve = button_width * 2.0f + style.ItemSpacing.x * 2.0f;
+
+    ImGui::SetNextItemWidth(-reserve);
+    if( ImGui::InputText("##FileName", &file_name_input_, ImGuiInputTextFlags_EnterReturnsTrue) )
         select_item(file_name_input_);
-    ImGui::PopItemWidth();
 
     if( !is_open_ )
         return;
     ImGui::SameLine();
-    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 160);
 
     const string btn_text = (selection_mode_==SelectionMode::SaveFile) ? "保存" : "打开";
-    if( ImGui::Button(btn_text.c_str(), ImVec2(70, 0)) )
+    if( ImGui::Button(btn_text.c_str(), ImVec2(button_width, 0)) )
         select_item(file_name_input_);
 
     ImGui::SameLine();
-    if (ImGui::Button("取消", ImVec2(70, 0))) {
+    if( ImGui::Button("取消", ImVec2(button_width, 0)) ) {
         selected_path_ = "";
         is_open_ = false;
         file_items_.clear();
@@ -251,12 +269,12 @@ void FileChooser::render_sidebar() {
     ImGui::BeginChild("Sidebar", ImVec2(200, 0), ImGuiChildFlags_ResizeX);
 
     fs::path home;
-    if (const char* home_env = std::getenv("HOME"))
+    if( const char* home_env = std::getenv("HOME") )
         home = home_env;
-    else if (const char* userprofile = std::getenv("USERPROFILE"))
+    else if( const char* userprofile = std::getenv("USERPROFILE") )
         home = userprofile;
 
-    if (!home.empty() && fs::exists(home)) {
+    if( !home.empty() && fs::exists(home) ) {
         ImGui::Text("常用位置");
         ImGui::Separator();
 
@@ -269,11 +287,11 @@ void FileChooser::render_sidebar() {
             {"音乐", "Music"},
             {"视频", "Videos"}
         };
-        for (auto& link : links) {
-            if (ImGui::Selectable(link.label)) {
+        for( auto& link : links ) {
+            if( ImGui::Selectable(link.label) ) {
                 fs::path target = home / link.subdir;
                 std::error_code ec;
-                if (fs::exists(target, ec))
+                if( fs::exists(target, ec) )
                     navigate_to(target);
             }
         }
@@ -283,11 +301,11 @@ void FileChooser::render_sidebar() {
 #ifdef _WIN32
     ImGui::Text("驱动器");
     DWORD drives = GetLogicalDrives();
-    for (char drive = 'A'; drive <= 'Z'; ++drive) {
-        if (drives & (1 << (drive - 'A'))) {
+    for( char drive = 'A'; drive <= 'Z'; ++drive ) {
+        if( drives & (1 << (drive - 'A')) ) {
             std::string drivePath = std::string(1, drive) + ":\\";
             std::string label = std::string(1, drive) + ":";
-            if (ImGui::Selectable(label.c_str())) {
+            if( ImGui::Selectable(label.c_str()) ) {
                 navigate_to(drivePath);
             }
         }
@@ -302,8 +320,8 @@ void FileChooser::load_directory() {
     file_name_input_.clear();
 
     try {
-        for (const fs::directory_entry &entry : fs::directory_iterator(current_directory_)) {
-            if (!show_hidden_files_) {
+        for( const fs::directory_entry &entry : fs::directory_iterator(current_directory_) ) {
+            if( !show_hidden_files_ ) {
                 std::string filename = entry.path().filename().u8string();
                 if (!filename.empty() && filename[0] == '.')
                     continue;
@@ -341,7 +359,7 @@ void FileChooser::load_directory() {
                 item.modified_time = "未知";
             }
 
-            if (is_filter_match(entry.path()))
+            if (!item.is_directory && is_filter_match(entry.path()))
                 file_items_.push_back(item);
         }
     } catch (const std::exception &e) {
