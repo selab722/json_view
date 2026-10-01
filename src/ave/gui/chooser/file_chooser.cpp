@@ -3,6 +3,8 @@
 #include <sstream>
 #include <iostream>
 #include <chrono>
+#include <optional>
+#include <utility>
 #include <imgui.h>
 #include <imgui_stdlib.h>
 #include "ave/gui/chooser/file_chooser.h"
@@ -11,11 +13,13 @@ using std::cout;
 using std::endl;
 using std::string;
 using std::vector;
+using std::pair;
+using std::optional;
 
 namespace fs = std::filesystem;
 
 #ifdef _WIN32
-// windows.h 默认定义 min/max 宏，会破坏本文件中 std::max 等调用（MSVC 报 C2589）。
+// windows.h 默认定义 min/max 宏，会破坏本文件中 std::max 等调用
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -44,6 +48,7 @@ void FileChooser::reset(bool all) {
         show_hidden_files_ = false;
         multiple_selection_ = false;
         selection_mode_ = SelectionMode::FilesOnly;
+        sort_order_ = SortOrder::Name;
     }
 
     load_directory();
@@ -96,7 +101,6 @@ void FileChooser::render_toolbar() {
         load_directory();
     ImGui::SameLine();
 
-    // 路径框占满一行：为右侧的 Filter 组合框和"显示隐藏"复选框预留宽度
     const ImGuiStyle &style = ImGui::GetStyle();
     const float filter_width = 150.0f;
     const float hidden_text_width = ImGui::CalcTextSize("显示隐藏").x;
@@ -120,9 +124,21 @@ void FileChooser::render_toolbar() {
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    if (ImGui::Checkbox("显示隐藏", &show_hidden_files_))
+    if( ImGui::Checkbox("显示隐藏", &show_hidden_files_) )
         load_directory();
     ImGui::Separator();
+}
+
+namespace {
+    optional<pair<unsigned int, bool>> sort_spec_first( ImGuiTableSortSpecs* sort_specs ) {
+        if( !sort_specs || !(sort_specs->SpecsDirty) || sort_specs->SpecsCount <= 0 )
+            return std::nullopt;
+        const ImGuiTableColumnSortSpecs* sort_spec = &sort_specs->Specs[0];
+        unsigned int id = sort_spec->ColumnUserID;
+        bool asc = (sort_spec->SortDirection) == ImGuiSortDirection_Ascending;
+        sort_specs->SpecsDirty = false; // 关键：清除脏标记
+        return pair{id, asc};
+    }
 }
 
 void FileChooser::render_file_list() {
@@ -133,13 +149,36 @@ void FileChooser::render_file_list() {
     if( ImGui::BeginTable("FileTable", 4,
                           ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY |
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter |
-                          ImGuiTableFlags_NoSavedSettings) ) {
+                          ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_Sortable) ) {
 
-        ImGui::TableSetupColumn("名称", ImGuiTableColumnFlags_WidthStretch, column_widths_[0]);
-        ImGui::TableSetupColumn("类型", ImGuiTableColumnFlags_WidthStretch, column_widths_[1]);
-        ImGui::TableSetupColumn("大小", ImGuiTableColumnFlags_WidthStretch, column_widths_[2]);
-        ImGui::TableSetupColumn("修改时间", ImGuiTableColumnFlags_WidthStretch, column_widths_[3]);
+        ImGui::TableSetupColumn("名称",     ImGuiTableColumnFlags_WidthStretch, column_widths_[0], (int)SortOrder::Name);
+        ImGui::TableSetupColumn("类型",     ImGuiTableColumnFlags_WidthStretch, column_widths_[1], (int)SortOrder::Type);
+        ImGui::TableSetupColumn("大小",     ImGuiTableColumnFlags_WidthStretch, column_widths_[2], (int)SortOrder::Size);
+        ImGui::TableSetupColumn("修改时间", ImGuiTableColumnFlags_WidthStretch, column_widths_[3], (int)SortOrder::Time);
         ImGui::TableHeadersRow();
+
+        {
+            optional<pair<unsigned int, bool>> sort_spec = sort_spec_first(ImGui::TableGetSortSpecs());
+            if( sort_spec ) {
+                switch( sort_spec->first ) {
+                    case (int)SortOrder::Name:
+                        sort_order_ = (sort_spec->second) ? SortOrder::Name : SortOrder::NameDes;
+                        break;
+                    case (int)SortOrder::Type:
+                        sort_order_ = (sort_spec->second) ? SortOrder::Type : SortOrder::TypeDes;
+                        break;
+                    case (int)SortOrder::Size:
+                        sort_order_ = (sort_spec->second) ? SortOrder::Size : SortOrder::SizeDes;
+                        break;
+                    case (int)SortOrder::Time:
+                        sort_order_ = (sort_spec->second) ? SortOrder::Time : SortOrder::TimeDes;
+                        break;
+                    default:
+                        break;
+                }
+                sort_items();
+            }
+        }
 
         for (FileItem &item : file_items_) {
             ImGui::TableNextRow();
@@ -348,18 +387,19 @@ void FileChooser::load_directory() {
                 item.type = "未知类型";
 
             if (!item.is_directory)
-                item.size = get_file_size(entry.path());
+                item.size = get_file_size(entry.path(), &item.size_bytes);
             else
                 item.size = "--";
 
             try {
                 auto ftime = fs::last_write_time(entry.path());
+                item.modified = ftime;          // 排序用（原始时间）
                 item.modified_time = format_time(ftime);
             } catch (...) {
-                item.modified_time = "未知";
+                item.modified_time = "未知";    // item.modified 保持默认值，排在最前/最后
             }
 
-            if (!item.is_directory && is_filter_match(entry.path()))
+            if (item.is_directory || is_filter_match(entry.path()))
                 file_items_.push_back(item);
         }
     } catch (const std::exception &e) {
@@ -370,11 +410,40 @@ void FileChooser::load_directory() {
 }
 
 void FileChooser::sort_items() {
+    // SortOrder 里升序/降序是成对定义的：Name=1,NameDes=2, Type=3,TypeDes=4, ...
+    const SortOrder order = sort_order_;
+    const bool descending = (static_cast<int>(order) % 2) == 0;
+
+    // 只比较"排序键"本身（严格弱序）；升/降序在外层统一处理
+    auto key_less = [order]( const FileItem &a, const FileItem &b ) {
+        switch( order ) {
+            case SortOrder::Name:
+            case SortOrder::NameDes:
+                return a.name < b.name;
+            case SortOrder::Type:
+            case SortOrder::TypeDes:
+                // 键值相同时用名称兜底，保证排序结果稳定
+                return a.type != b.type ? a.type < b.type : a.name < b.name;
+            case SortOrder::Size:
+            case SortOrder::SizeDes:
+                return a.size_bytes != b.size_bytes ? a.size_bytes < b.size_bytes : a.name < b.name;
+            case SortOrder::Time:
+            case SortOrder::TimeDes:
+                return a.modified != b.modified ? a.modified < b.modified : a.name < b.name;
+        }
+        return a.name < b.name;  // 新增枚举值时的兜底
+    };
+
     std::sort(file_items_.begin(), file_items_.end(),
-                [](const FileItem &a, const FileItem &b) {
+                [&key_less, descending](const FileItem &a, const FileItem &b) {
+                    // 文件夹始终排在文件前面（与资源管理器一致），升降序只作用在同类之间
                     if (a.is_directory != b.is_directory)
                         return a.is_directory > b.is_directory;
-                    return a.name < b.name;
+                    if (key_less(a, b))
+                        return !descending;
+                    if (key_less(b, a))
+                        return descending;
+                    return false;
                 });
 }
 
@@ -401,9 +470,11 @@ bool FileChooser::is_filter_match(const fs::path &path) const {
     return current_filter_.find(ext.substr(1)) != std::string::npos;
 }
 
-std::string FileChooser::get_file_size(const fs::path &path) {
+std::string FileChooser::get_file_size(const fs::path &path, uintmax_t *out_size) {
     try {
         uintmax_t size = fs::file_size(path);
+        if (out_size)
+            *out_size = size;
         const char *units[] = {"B", "KB", "MB", "GB", "TB"};
         int unitIndex = 0;
         double fileSize = static_cast<double>(size);
@@ -417,6 +488,8 @@ std::string FileChooser::get_file_size(const fs::path &path) {
         ss << std::fixed << std::setprecision(1) << fileSize << " " << units[unitIndex];
         return ss.str();
     } catch (...) {
+        if (out_size)
+            *out_size = 0;
         return "未知";
     }
 }

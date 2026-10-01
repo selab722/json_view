@@ -1,6 +1,7 @@
 #ifndef AVE_GUI_CHOOSER_FILE__CHOOSER_H
 #define AVE_GUI_CHOOSER_FILE__CHOOSER_H
 
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -73,7 +74,8 @@ private:
     void render_sidebar();
 
     bool is_filter_match(const std::filesystem::path& path) const;
-    static std::string get_file_size(const std::filesystem::path& path);
+    // 返回用于显示的尺寸字符串；out_size 非空时同时回传原始字节数（排序要用，展示串没法比大小）
+    static std::string get_file_size(const std::filesystem::path& path, std::uintmax_t* out_size = nullptr);
     static std::string format_time(const std::filesystem::file_time_type& time);
 
     bool is_open_ = false;
@@ -89,8 +91,10 @@ private:
         std::filesystem::path path;
         std::string name;
         std::string type;
-        std::string size;
-        std::string modified_time;
+        std::string size;                              // 显示用，如 "1.2 KB"
+        std::string modified_time;                     // 显示用，如 "2024-01-01 08:30"
+        std::uintmax_t size_bytes = 0;                 // 排序用：原始字节数
+        std::filesystem::file_time_type modified{};    // 排序用：原始修改时间
         bool is_directory;
         bool is_selected;
     };
@@ -106,6 +110,9 @@ private:
 
     std::vector<std::string> filters_;
     std::string current_filter_;
+
+    enum class SortOrder { Name = 1, NameDes, Type, TypeDes, Size, SizeDes, Time, TimeDes };
+    SortOrder sort_order_ = SortOrder::Name;
 
     std::string top_dir_input_;
     std::string file_name_input_;
