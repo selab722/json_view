@@ -84,7 +84,7 @@ bool FileChooser::show() {
     }
     ImGui::PopStyleColor();
 
-    return !is_open_ && !selected_path_.empty();
+    return !is_open_ && has_selected();
 }
 
 void FileChooser::close() {
@@ -219,44 +219,48 @@ void FileChooser::render_file_list() {
 }
 
 void FileChooser::single_click( FileItem& item, bool ctrl_down ) {
-    if( !is_selectable(item.path) )
+    if( !is_selectable(item.path) ) {
+        if( item.is_directory )
+            file_name_input_ = item.name;
         return;
+    }
     if( multiple_selection_ && ctrl_down ) {
         item.is_selected = !item.is_selected;
-        if( item.is_selected && selected_path_.empty() )
+        if( item.is_selected )
             selected_path_ = current_directory_ / item.path;
+        else{
+            file_name_input_.clear();
+            if( selected_path_ == (current_directory_ / item.path) )
+                selected_path_.clear();
+        }
     } else {
-        for( FileItem &other : file_items_ )
-            other.is_selected = false;
+        if( multiple_selection_ ) {
+            for( FileItem &other : file_items_ )
+                other.is_selected = false;
+            item.is_selected = true;
+            selected_path_ == (current_directory_ / item.path);
+        }
         file_name_input_ = item.name;
-        item.is_selected = true;
-        if( multiple_selection_ && selected_path_.empty() )
-            selected_path_ = current_directory_ / item.path;
     }
 }
 
 void FileChooser::select_item(const fs::path& path) {
-    if( !is_selectable(path) ) {
-        if( fs::is_directory(current_directory_ / path) )
-            navigate_to(current_directory_ / path);
-        return;
-    }
     if( path.empty() ) {
-        if( multiple_selection_ ) {
-            is_open_ = false;
-            if( selected_path_.empty() && fs::is_directory(current_directory_) ) {
-                selected_path_ = current_directory_;
-                file_items_.clear();
-            }
-        } else if( fs::is_directory(current_directory_) ) {
+        bool has_sel = has_selected();
+        if( multiple_selection_ )
+            is_open_ = !has_sel;
+        if( !has_sel && fs::is_directory(current_directory_) && is_selectable(path) ) {
             is_open_ = false;
             selected_path_ = current_directory_;
             file_items_.clear();
         }
         return;
     }
-    if( !fs::is_directory(current_directory_/ path) && selection_mode_==SelectionMode::DirectoriesOnly )
+    if( !is_selectable(path) ) {
+        if( fs::is_directory(current_directory_ / path) )
+            navigate_to(current_directory_ / path);
         return;
+    }
     bool found = false;
     if (selection_mode_==SelectionMode::SaveFile)
         found = true;
@@ -411,40 +415,34 @@ void FileChooser::load_directory() {
 
 void FileChooser::sort_items() {
     // SortOrder 里升序/降序是成对定义的：Name=1,NameDes=2, Type=3,TypeDes=4, ...
+    cout<<"sorting"<<endl;
     const SortOrder order = sort_order_;
     const bool descending = (static_cast<int>(order) % 2) == 0;
 
     // 只比较"排序键"本身（严格弱序）；升/降序在外层统一处理
-    auto key_less = [order]( const FileItem &a, const FileItem &b ) {
+    auto key_less = [order, descending]( const FileItem &a, const FileItem &b ) -> bool {
+        if (a.is_directory != b.is_directory)
+            return a.is_directory > b.is_directory;
         switch( order ) {
             case SortOrder::Name:
             case SortOrder::NameDes:
-                return a.name < b.name;
+                return descending ^ (a.name<=b.name);
             case SortOrder::Type:
             case SortOrder::TypeDes:
                 // 键值相同时用名称兜底，保证排序结果稳定
-                return a.type != b.type ? a.type < b.type : a.name < b.name;
+                return a.type != b.type ? (descending^(a.type<=b.type)) : (descending^(a.name<=b.name));
             case SortOrder::Size:
             case SortOrder::SizeDes:
-                return a.size_bytes != b.size_bytes ? a.size_bytes < b.size_bytes : a.name < b.name;
+                return descending ^ (a.size_bytes<=b.size_bytes);
             case SortOrder::Time:
             case SortOrder::TimeDes:
-                return a.modified != b.modified ? a.modified < b.modified : a.name < b.name;
+                return descending ^ (a.modified<=b.modified);
+            default:
+                return a.name <= b.name;  // 新增枚举值时的兜底
         }
-        return a.name < b.name;  // 新增枚举值时的兜底
     };
 
-    std::sort(file_items_.begin(), file_items_.end(),
-                [&key_less, descending](const FileItem &a, const FileItem &b) {
-                    // 文件夹始终排在文件前面（与资源管理器一致），升降序只作用在同类之间
-                    if (a.is_directory != b.is_directory)
-                        return a.is_directory > b.is_directory;
-                    if (key_less(a, b))
-                        return !descending;
-                    if (key_less(b, a))
-                        return descending;
-                    return false;
-                });
+    std::sort(file_items_.begin(), file_items_.end(), key_less);
 }
 
 void FileChooser::navigate_to(const fs::path &path) {
@@ -516,6 +514,9 @@ std::string FileChooser::format_time(const fs::file_time_type &time) {
 }
 
 std::vector<fs::path> FileChooser::get_selected_files() const {
+    if( !multiple_selection_ )
+        return selected_path_.empty() ? vector<fs::path>{} : vector<fs::path>{ selected_path_ };
+
     std::vector<fs::path> result;
     for (const auto &item : file_items_)
         if (item.is_selected)

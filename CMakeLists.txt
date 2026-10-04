@@ -26,18 +26,13 @@ endif()
 
 file(GLOB_RECURSE SOURCES "src/**/*.cpp")
 
-# message("=== SOURCES ===")
-# foreach(source ${SOURCES})
-#     message("${source}")
-# endforeach()
-
 # MyLib
 add_library(MyLib STATIC ${SOURCES})
 target_include_directories(MyLib PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:include>
 )
-target_compile_options(MyLib PRIVATE ${AVE_UTF8_COMPILE_OPTIONS})
+target_compile_options(MyLib PUBLIC ${AVE_UTF8_COMPILE_OPTIONS})
 
 # imgui
 set(IMGUI_SOURCES

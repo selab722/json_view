@@ -67,11 +67,6 @@ public:
             fc.show();
         }
 
-        if( fc.get_selected_file().empty() )
-            ImGui::Text("Unselected");
-        else
-            ImGui::Text("%s", fc.get_selected_file().string().c_str());
-
         vector<fs::path> selected = fc.get_selected_files();
         for( int i = 0; i < selected.size(); i ++ )
             ImGui::Text("%d %s", i, selected[i].u8string().c_str());

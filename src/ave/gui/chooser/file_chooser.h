@@ -26,10 +26,10 @@ public:
     ~FileChooser() = default;
 
     /**
-     * @brief       When return true, you can call get_selected_file or get_selected_files
-     *              to get selected. If multiple selection is true, then the former returns
-     *              the first file gets selected. If ms is false, the latter return empty vector.
-     *              If a file is not selected, these will return empty.
+     * @brief       When user click confirm, this function return true, then you can call get_selected_files().
+     *              If multiple selection is allowed, then it will contain possibly multiple files.
+     *              Otherwise it will only return 1 file.
+     *              If a file is not selected, this function return false.
      * @return      true if file(s) get selected
      */
     bool show();
@@ -63,8 +63,6 @@ public:
 
     bool is_multiple_selection() const { return multiple_selection_; }
 
-    std::filesystem::path get_selected_file() const { return selected_path_; }
-
     std::vector<std::filesystem::path> get_selected_files() const;
 
 private:
@@ -85,7 +83,20 @@ private:
     SelectionMode selection_mode_ = SelectionMode::FilesOnly;
 
     std::filesystem::path current_directory_;  // canonical path
+    // Used when multiple selection not allowed.
+    // When multiple is allowed, this will sometimes save one of the selected answer,
+    // but not always, this will reduce the search time for has_selected.
     std::filesystem::path selected_path_;
+
+    bool has_selected() const {
+        if( !selected_path_.empty() )
+            return true;
+        if( multiple_selection_ )
+            for( const FileItem& ft : file_items_ )
+                if( ft.is_selected )
+                    return true;
+        return false;
+    }
 
     struct FileItem {
         std::filesystem::path path;
