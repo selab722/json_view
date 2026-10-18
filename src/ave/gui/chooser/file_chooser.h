@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <utility>
 #include <vector>
 #include <string>
 
@@ -69,7 +70,9 @@ private:
     void render_toolbar();
     void render_file_list();
     void render_footer();
-    void render_sidebar();
+    bool render_sidebar();
+
+    std::vector<std::pair<std::string, std::filesystem::path>> quick_links_;
 
     bool is_filter_match(const std::filesystem::path& path) const;
     // 返回用于显示的尺寸字符串；out_size 非空时同时回传原始字节数（排序要用，展示串没法比大小）

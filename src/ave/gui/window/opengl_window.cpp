@@ -125,8 +125,11 @@ bool GlWindow::loop(int) {
     if( glfwWindowShouldClose(window_) )
         return false;
 
-    glfwMakeContextCurrent(window_);
-    ImGui::SetCurrentContext(imgui_context_);
+    if( glfwGetCurrentContext() != window_ )
+        glfwMakeContextCurrent(window_);
+
+    if( ImGui::GetCurrentContext() != imgui_context_ )
+        ImGui::SetCurrentContext(imgui_context_);
 
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

@@ -70,8 +70,8 @@ bool FileChooser::show() {
 
         render_toolbar();
 
-        render_sidebar();
-        ImGui::SameLine();
+        if( render_sidebar() )
+            ImGui::SameLine();
 
         ImGui::BeginChild("MainContent");
 
@@ -238,7 +238,7 @@ void FileChooser::single_click( FileItem& item, bool ctrl_down ) {
             for( FileItem &other : file_items_ )
                 other.is_selected = false;
             item.is_selected = true;
-            selected_path_ == (current_directory_ / item.path);
+            selected_path_ = (current_directory_ / item.path);
         }
         file_name_input_ = item.name;
     }
@@ -308,21 +308,22 @@ void FileChooser::render_footer() {
     }
 }
 
-void FileChooser::render_sidebar() {
-    ImGui::BeginChild("Sidebar", ImVec2(200, 0), ImGuiChildFlags_ResizeX);
+namespace {
+    // 收集侧边栏"常用位置"里真正存在的目录，返回 (标签, 目录)。
+    // 需要访问文件系统，所以由调用方负责缓存，不要每帧调用。
+    std::vector<std::pair<string, fs::path>> collect_quick_links() {
+        std::vector<std::pair<string, fs::path>> links;
 
-    fs::path home;
-    if( const char* home_env = std::getenv("HOME") )
-        home = home_env;
-    else if( const char* userprofile = std::getenv("USERPROFILE") )
-        home = userprofile;
+        fs::path home;
+        if( const char* home_env = std::getenv("HOME") )
+            home = home_env;
+        else if( const char* userprofile = std::getenv("USERPROFILE") )
+            home = userprofile;
 
-    if( !home.empty() && fs::exists(home) ) {
-        ImGui::Text("常用位置");
-        ImGui::Separator();
+        if( home.empty() )
+            return links;
 
-        struct QuickLink { const char* label; const char* subdir; };
-        QuickLink links[] = {
+        static const struct { const char* label; const char* subdir; } candidates[] = {
             {"桌面", "Desktop"},
             {"文档", "Documents"},
             {"下载", "Downloads"},
@@ -330,37 +331,61 @@ void FileChooser::render_sidebar() {
             {"音乐", "Music"},
             {"视频", "Videos"}
         };
-        for( auto& link : links ) {
-            if( ImGui::Selectable(link.label) ) {
-                fs::path target = home / link.subdir;
-                std::error_code ec;
-                if( fs::exists(target, ec) )
-                    navigate_to(target);
-            }
+        for( const auto& candidate : candidates ) {
+            std::error_code ec;
+            fs::path target = home / candidate.subdir;
+            // 不存在的目录不列出来，否则点了也没反应，还可能让侧边栏白白占地方
+            if( fs::is_directory(target, ec) )
+                links.emplace_back(candidate.label, target);
         }
+        return links;
+    }
+}
+
+bool FileChooser::render_sidebar() {
+    // 驱动器列表只是一次 GetLogicalDrives()，没有文件系统访问，不需要缓存。
+    // 注意这里不逐个探测盘符是否存在：断开的网络盘/空光驱会让探测卡住。
+    vector<string> drive_labels;
+#ifdef _WIN32
+    const DWORD drive_mask = GetLogicalDrives();
+    for( char drive = 'A'; drive <= 'Z'; ++drive )
+        if( drive_mask & (1 << (drive - 'A')) )
+            drive_labels.push_back(string(1, drive) + ":");
+#endif
+
+    // 一个条目都没有就不创建子窗口：否则会白占一块 200 像素宽的空面板
+    if( quick_links_.empty() && drive_labels.empty() )
+        return false;
+
+    ImGui::BeginChild("Sidebar", ImVec2(200, 0), ImGuiChildFlags_ResizeX);
+
+    if( !quick_links_.empty() ) {
+        ImGui::Text("常用位置");
+        ImGui::Separator();
+
+        for( const auto& link : quick_links_ )
+            if( ImGui::Selectable(link.first.c_str()) )
+                navigate_to(link.second);
+
         ImGui::Separator();
     }
 
-#ifdef _WIN32
-    ImGui::Text("驱动器");
-    DWORD drives = GetLogicalDrives();
-    for( char drive = 'A'; drive <= 'Z'; ++drive ) {
-        if( drives & (1 << (drive - 'A')) ) {
-            std::string drivePath = std::string(1, drive) + ":\\";
-            std::string label = std::string(1, drive) + ":";
-            if( ImGui::Selectable(label.c_str()) ) {
-                navigate_to(drivePath);
-            }
-        }
+    if( !drive_labels.empty() ) {
+        ImGui::Text("驱动器");
+        for( const string& label : drive_labels )
+            if( ImGui::Selectable(label.c_str()) )
+                navigate_to(label + "\\");
     }
-#endif
+
     ImGui::EndChild();
+    return true;
 }
 
 void FileChooser::load_directory() {
     top_dir_input_ = current_directory_.u8string();
     file_items_.clear();
     file_name_input_.clear();
+    quick_links_ = collect_quick_links();
 
     try {
         for( const fs::directory_entry &entry : fs::directory_iterator(current_directory_) ) {
