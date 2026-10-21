@@ -51,12 +51,14 @@ void FileChooser::reset(bool all) {
         sort_order_ = SortOrder::Name;
     }
 
-    load_directory();
+    quick_links_.clear();
+    file_items_.clear();
 }
 
 bool FileChooser::show() {
     if( !is_open_ ) {
         reset(false);
+        load_directory();  // 打开时只加载一次
         ImGui::OpenPopup("选择文件");
         is_open_ = true;
     }
@@ -160,23 +162,28 @@ void FileChooser::render_file_list() {
         {
             optional<pair<unsigned int, bool>> sort_spec = sort_spec_first(ImGui::TableGetSortSpecs());
             if( sort_spec ) {
+                SortOrder order = sort_order_;
                 switch( sort_spec->first ) {
                     case (int)SortOrder::Name:
-                        sort_order_ = (sort_spec->second) ? SortOrder::Name : SortOrder::NameDes;
+                        order = (sort_spec->second) ? SortOrder::Name : SortOrder::NameDes;
                         break;
                     case (int)SortOrder::Type:
-                        sort_order_ = (sort_spec->second) ? SortOrder::Type : SortOrder::TypeDes;
+                        order = (sort_spec->second) ? SortOrder::Type : SortOrder::TypeDes;
                         break;
                     case (int)SortOrder::Size:
-                        sort_order_ = (sort_spec->second) ? SortOrder::Size : SortOrder::SizeDes;
+                        order = (sort_spec->second) ? SortOrder::Size : SortOrder::SizeDes;
                         break;
                     case (int)SortOrder::Time:
-                        sort_order_ = (sort_spec->second) ? SortOrder::Time : SortOrder::TimeDes;
+                        order = (sort_spec->second) ? SortOrder::Time : SortOrder::TimeDes;
                         break;
                     default:
                         break;
                 }
-                sort_items();
+
+                if( order != sort_order_ ) {
+                    sort_order_ = order;
+                    sort_items();
+                }
             }
         }
 
@@ -308,40 +315,6 @@ void FileChooser::render_footer() {
     }
 }
 
-namespace {
-    // 收集侧边栏"常用位置"里真正存在的目录，返回 (标签, 目录)。
-    // 需要访问文件系统，所以由调用方负责缓存，不要每帧调用。
-    std::vector<std::pair<string, fs::path>> collect_quick_links() {
-        std::vector<std::pair<string, fs::path>> links;
-
-        fs::path home;
-        if( const char* home_env = std::getenv("HOME") )
-            home = home_env;
-        else if( const char* userprofile = std::getenv("USERPROFILE") )
-            home = userprofile;
-
-        if( home.empty() )
-            return links;
-
-        static const struct { const char* label; const char* subdir; } candidates[] = {
-            {"桌面", "Desktop"},
-            {"文档", "Documents"},
-            {"下载", "Downloads"},
-            {"图片", "Pictures"},
-            {"音乐", "Music"},
-            {"视频", "Videos"}
-        };
-        for( const auto& candidate : candidates ) {
-            std::error_code ec;
-            fs::path target = home / candidate.subdir;
-            // 不存在的目录不列出来，否则点了也没反应，还可能让侧边栏白白占地方
-            if( fs::is_directory(target, ec) )
-                links.emplace_back(candidate.label, target);
-        }
-        return links;
-    }
-}
-
 bool FileChooser::render_sidebar() {
     // 驱动器列表只是一次 GetLogicalDrives()，没有文件系统访问，不需要缓存。
     // 注意这里不逐个探测盘符是否存在：断开的网络盘/空光驱会让探测卡住。
@@ -379,6 +352,40 @@ bool FileChooser::render_sidebar() {
 
     ImGui::EndChild();
     return true;
+}
+
+namespace {
+    // 收集侧边栏"常用位置"里真正存在的目录，返回 (标签, 目录)。
+    // 需要访问文件系统，所以由调用方负责缓存，不要每帧调用。
+    std::vector<std::pair<string, fs::path>> collect_quick_links() {
+        std::vector<std::pair<string, fs::path>> links;
+
+        fs::path home;
+        if( const char* home_env = std::getenv("HOME") )
+            home = home_env;
+        else if( const char* userprofile = std::getenv("USERPROFILE") )
+            home = userprofile;
+
+        if( home.empty() )
+            return links;
+
+        static const struct { const char* label; const char* subdir; } candidates[] = {
+            {"桌面", "Desktop"},
+            {"文档", "Documents"},
+            {"下载", "Downloads"},
+            {"图片", "Pictures"},
+            {"音乐", "Music"},
+            {"视频", "Videos"}
+        };
+        for( const auto& candidate : candidates ) {
+            std::error_code ec;
+            fs::path target = home / candidate.subdir;
+            // 不存在的目录不列出来，否则点了也没反应，还可能让侧边栏白白占地方
+            if( fs::is_directory(target, ec) )
+                links.emplace_back(candidate.label, target);
+        }
+        return links;
+    }
 }
 
 void FileChooser::load_directory() {
@@ -451,19 +458,19 @@ void FileChooser::sort_items() {
         switch( order ) {
             case SortOrder::Name:
             case SortOrder::NameDes:
-                return descending ^ (a.name<=b.name);
+                return descending ^ (a.name<b.name);
             case SortOrder::Type:
             case SortOrder::TypeDes:
                 // 键值相同时用名称兜底，保证排序结果稳定
-                return a.type != b.type ? (descending^(a.type<=b.type)) : (descending^(a.name<=b.name));
+                return a.type != b.type ? (descending^(a.type<b.type)) : (descending^(a.name<b.name));
             case SortOrder::Size:
             case SortOrder::SizeDes:
-                return descending ^ (a.size_bytes<=b.size_bytes);
+                return descending ^ (a.size_bytes<b.size_bytes);
             case SortOrder::Time:
             case SortOrder::TimeDes:
-                return descending ^ (a.modified<=b.modified);
+                return descending ^ (a.modified<b.modified);
             default:
-                return a.name <= b.name;  // 新增枚举值时的兜底
+                return a.name < b.name;  // 新增枚举值时的兜底
         }
     };
 
