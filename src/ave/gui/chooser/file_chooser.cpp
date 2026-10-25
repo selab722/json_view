@@ -388,6 +388,48 @@ namespace {
     }
 }
 
+namespace {
+    pair<string, uintmax_t> get_file_size(const fs::path &path) {
+        try {
+            uintmax_t size = fs::file_size(path);
+            static const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+            int unit_index = 0;
+            double file_size = static_cast<double>(size);
+
+            while( file_size >= 1024.0 && unit_index < 4 ) {
+                file_size /= 1024.0;
+                unit_index ++;
+            }
+
+            std::stringstream ss;
+            ss << std::fixed << std::setprecision(1) << file_size << " " << units[unit_index];
+            return {ss.str(), size};
+        } catch (...) {
+            return {"未知", 0};
+        }
+    }
+
+    std::string format_time(const fs::file_time_type &time) {
+        try {
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                time - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+            auto tt = std::chrono::system_clock::to_time_t(sctp);
+
+            std::tm tm;
+#ifdef _WIN32
+            if( localtime_s(&tm, &tt) != 0 ) return "未知";
+#else
+            if( localtime_r(&tt, &tm) == nullptr ) return "未知";
+#endif
+            std::stringstream ss;
+            ss << std::put_time(&tm, "%Y-%m-%d %H:%M");
+            return ss.str();
+        } catch (...) {
+            return "未知";
+        }
+    }
+}
+
 void FileChooser::load_directory() {
     top_dir_input_ = current_directory_.u8string();
     file_items_.clear();
@@ -411,20 +453,21 @@ void FileChooser::load_directory() {
             item.is_directory = entry.is_directory();
             item.is_selected = false;
 
-            if (item.is_directory)
+            if( item.is_directory )
                 item.type = "文件夹";
-            else if (entry.path().has_extension()) {
+            else if( entry.path().has_extension() ) {
                 item.type = entry.path().extension().u8string();
-                if (!item.type.empty())
+                if( !item.type.empty() )
                     item.type = item.type.substr(1); // 移除点
                 item.type = item.type + " 文件";
-            }
-            else
+            } else
                 item.type = "未知类型";
 
-            if (!item.is_directory)
-                item.size = get_file_size(entry.path(), &item.size_bytes);
-            else
+            if( !item.is_directory ) {
+                pair<string, uintmax_t> file_size = get_file_size(entry.path());
+                item.size = file_size.first;
+                item.size_bytes = file_size.second;
+            } else
                 item.size = "--";
 
             try {
@@ -435,10 +478,10 @@ void FileChooser::load_directory() {
                 item.modified_time = "未知";    // item.modified 保持默认值，排在最前/最后
             }
 
-            if (item.is_directory || is_filter_match(entry.path()))
+            if( item.is_directory || is_filter_match(entry.path()) )
                 file_items_.push_back(item);
         }
-    } catch (const std::exception &e) {
+    } catch( const std::exception &e ) {
         printf("Error loading directory: %s\n", e.what());
     }
 
@@ -447,13 +490,12 @@ void FileChooser::load_directory() {
 
 void FileChooser::sort_items() {
     // SortOrder 里升序/降序是成对定义的：Name=1,NameDes=2, Type=3,TypeDes=4, ...
-    cout<<"sorting"<<endl;
     const SortOrder order = sort_order_;
     const bool descending = (static_cast<int>(order) % 2) == 0;
 
     // 只比较"排序键"本身（严格弱序）；升/降序在外层统一处理
     auto key_less = [order, descending]( const FileItem &a, const FileItem &b ) -> bool {
-        if (a.is_directory != b.is_directory)
+        if( a.is_directory != b.is_directory )
             return a.is_directory > b.is_directory;
         switch( order ) {
             case SortOrder::Name:
@@ -478,71 +520,26 @@ void FileChooser::sort_items() {
 }
 
 void FileChooser::navigate_to(const fs::path &path) {
-    if (fs::exists(path) && fs::is_directory(path)) {
+    if( fs::exists(path) && fs::is_directory(path) ) {
         current_directory_ = fs::canonical(path);
         load_directory();
     }
 }
 
 void FileChooser::navigate_up() {
-    if (current_directory_.has_parent_path())
+    if( current_directory_.has_parent_path() )
         navigate_to(current_directory_.parent_path());
 }
 
 bool FileChooser::is_filter_match(const fs::path &path) const {
-    if (current_filter_ == "所有文件 (*.*)")
+    if( current_filter_ == "所有文件 (*.*)" )
         return true;
 
     std::string ext = path.extension().u8string();
-    if (ext.empty())
+    if( ext.empty() )
         return false;
 
     return current_filter_.find(ext.substr(1)) != std::string::npos;
-}
-
-std::string FileChooser::get_file_size(const fs::path &path, uintmax_t *out_size) {
-    try {
-        uintmax_t size = fs::file_size(path);
-        if (out_size)
-            *out_size = size;
-        const char *units[] = {"B", "KB", "MB", "GB", "TB"};
-        int unitIndex = 0;
-        double fileSize = static_cast<double>(size);
-
-        while (fileSize >= 1024.0 && unitIndex < 4) {
-            fileSize /= 1024.0;
-            unitIndex++;
-        }
-
-        std::stringstream ss;
-        ss << std::fixed << std::setprecision(1) << fileSize << " " << units[unitIndex];
-        return ss.str();
-    } catch (...) {
-        if (out_size)
-            *out_size = 0;
-        return "未知";
-    }
-}
-
-std::string FileChooser::format_time(const fs::file_time_type &time) {
-    try {
-        auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-            time - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
-        auto tt = std::chrono::system_clock::to_time_t(sctp);
-
-        std::tm tm;
-#ifdef _WIN32
-        localtime_s(&tm, &tt);
-#else
-        localtime_r(&tt, &tm);
-#endif
-
-        std::stringstream ss;
-        ss << std::put_time(&tm, "%Y-%m-%d %H:%M");
-        return ss.str();
-    } catch (...) {
-        return "未知";
-    }
 }
 
 std::vector<fs::path> FileChooser::get_selected_files() const {

@@ -75,9 +75,6 @@ private:
     std::vector<std::pair<std::string, std::filesystem::path>> quick_links_;
 
     bool is_filter_match(const std::filesystem::path& path) const;
-    // 返回用于显示的尺寸字符串；out_size 非空时同时回传原始字节数（排序要用，展示串没法比大小）
-    static std::string get_file_size(const std::filesystem::path& path, std::uintmax_t* out_size = nullptr);
-    static std::string format_time(const std::filesystem::file_time_type& time);
 
     bool is_open_ = false;
     bool show_hidden_files_ = false;
