@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <system_error>
 #include <utility>
 #include <vector>
 #include <string>
@@ -45,7 +46,22 @@ public:
     void navigate_to(const std::filesystem::path& path);
     void navigate_up();
 
+    /**
+     * @brief       Set the only filter of the list.
+     * @details     A filter is a canonical file-name suffix, or "*" for everything:
+     *              "png" matches "a.png", "tar.gz" matches "a.tar.gz", "*" matches all files.
+     *              The input is stored as is; old spellings such as "*.png" or
+     *              "图片 (*.png;*.jpg)" are NOT parsed and would never match anything.
+     *              This only changes state: the directory is not reloaded, the filter
+     *              applies the next time the list gets loaded (e.g. when the dialog opens).
+     */
     void set_filter(const std::string& filter);
+
+    /**
+     * @brief       Replace the whole filter list. Entries follow the same contract as
+     *              set_filter(); an empty list falls back to {"*"}.
+     *              Like set_filter(), it does not reload the directory.
+     */
     void set_filters(const std::vector<std::string>& filters);
 
     void set_selection_mode(SelectionMode mode) {
@@ -113,14 +129,17 @@ private:
     bool is_selectable( const std::filesystem::path& path ) const {
         bool dir_ok = selection_mode_==SelectionMode::DirectoriesOnly || selection_mode_==SelectionMode::FilesOrDirectories;
         bool file_ok = selection_mode_==SelectionMode::FilesOnly || selection_mode_==SelectionMode::SaveFile;
-        bool is_dir = std::filesystem::is_directory(current_directory_ / path);
+        std::error_code ec;
+        bool is_dir = std::filesystem::is_directory(current_directory_ / path, ec);
+        if( ec )            // 探测失败（无权限等）就当不可选，别把异常抛给 UI 回调
+            return false;
         return is_dir ? dir_ok : file_ok;
     }
 
     std::vector<FileItem> file_items_;
 
     std::vector<std::string> filters_;
-    std::string current_filter_;
+    std::string current_filter_ = "*";
 
     enum class SortOrder { Name = 1, NameDes, Type, TypeDes, Size, SizeDes, Time, TimeDes };
     SortOrder sort_order_ = SortOrder::Name;

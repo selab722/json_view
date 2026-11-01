@@ -18,6 +18,8 @@ class MyWindow : public Runner {
 public:
     FileChooser fc;
 
+    vector<fs::path> last_selected_;
+
     virtual bool loop(int) {
         static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
                                         ImGuiWindowFlags_NoCollapse |
@@ -34,42 +36,51 @@ public:
 
         ImGui::Begin("Fullscreen window", nullptr, flags);
 
-        if( fc.is_open() ) {
-            // cout<<"mul: "<<fc.is_multiple_selection()<<endl;
-            fc.show();
-        }
+        // 对话框打开期间每帧都要驱动它；show() 只在"用户确认选择"的那一帧返回 true
+        bool confirmed = false;
+        if( fc.is_open() )
+            confirmed = fc.show();
 
         if( ImGui::Button("Single File") ) {
             fc.reset(true);
             fc.set_selection_mode(FileChooser::SelectionMode::FilesOnly);
             fc.set_multiple_selection(false);
-            fc.show();
+            fc.set_filters({"*", "json", "otf"});
+            confirmed = fc.show();
         }
 
         if( ImGui::Button("Multiple File") ) {
             fc.reset(true);
             fc.set_selection_mode(FileChooser::SelectionMode::FilesOnly);
             fc.set_multiple_selection(true);
-            fc.show();
+            fc.set_filter("json");
+            confirmed = fc.show();
         }
 
         if( ImGui::Button("Single Dir") ) {
             fc.reset(true);
             fc.set_selection_mode(FileChooser::SelectionMode::DirectoriesOnly);
             fc.set_multiple_selection(false);
-            fc.show();
+            confirmed = fc.show();
         }
 
         if( ImGui::Button("Multiple Dir") ) {
             fc.reset(true);
             fc.set_selection_mode(FileChooser::SelectionMode::DirectoriesOnly);
             fc.set_multiple_selection(true);
-            fc.show();
+            confirmed = fc.show();
         }
 
-        vector<fs::path> selected = fc.get_selected_files();
-        for( int i = 0; i < selected.size(); i ++ )
-            ImGui::Text("%d %s", i, selected[i].u8string().c_str());
+        // 确认的那一帧才取结果，符合 show() 的返回值约定
+        if( confirmed ) {
+            last_selected_ = fc.get_selected_files();
+            cout << "confirmed " << last_selected_.size() << " item(s):" << endl;
+            for( const fs::path& path : last_selected_ )
+                cout << "  " << path.u8string() << endl;
+        }
+
+        for( int i = 0; i < (int)last_selected_.size(); i ++ )
+            ImGui::Text("%d %s", i, last_selected_[i].u8string().c_str());
 
         ImGui::End();
         return true;

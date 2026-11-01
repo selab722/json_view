@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iostream>
 #include <chrono>
+#include <cstdlib>
 #include <optional>
 #include <utility>
 #include <imgui.h>
@@ -43,7 +44,7 @@ void FileChooser::reset(bool all) {
     file_name_input_.clear();
 
     if( all ) {
-        filters_ = {"所有文件 (*.*)"};
+        filters_ = {"*"};
         current_filter_ = filters_[0];
         show_hidden_files_ = false;
         multiple_selection_ = false;
@@ -94,6 +95,30 @@ void FileChooser::close() {
     ImGui::CloseCurrentPopup();
 }
 
+namespace {
+    char ascii_lower( char c ) {
+        return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+    }
+
+    string filter_label( const string& filter ) {
+        return (filter == "*") ? string("所有文件") : "*." + filter;
+    }
+
+    // 文件名是否以 "." + suffix 结尾（ASCII 大小写无关，Windows 上 "A.TXT" 也能被 "txt" 命中）。
+    // 点号前面必须还有内容，所以 ".png" 这种只能算隐藏文件名，不算有扩展名。
+    bool has_dot_suffix( const string& name, const string& suffix ) {
+        if( name.size() < suffix.size() + 2 )
+            return false;
+        const size_t dot = name.size() - suffix.size() - 1;   // 上面保证了 dot >= 1
+        if( name[dot] != '.' )
+            return false;
+        for( size_t i = 0; i < suffix.size(); ++i )
+            if( ascii_lower(name[dot + 1 + i]) != ascii_lower(suffix[i]) )
+                return false;
+        return true;
+    }
+}
+
 void FileChooser::render_toolbar() {
     if( ImGui::ArrowButton("##Up", ImGuiDir_Up) )
         navigate_up();
@@ -112,14 +137,17 @@ void FileChooser::render_toolbar() {
 
     // 负值宽度表示"从右边界向左预留 reserve 像素"，随窗口宽度自适应
     ImGui::SetNextItemWidth(-reserve);
-    if( ImGui::InputText("##Path", &top_dir_input_, ImGuiInputTextFlags_EnterReturnsTrue) )
-        navigate_to(top_dir_input_);
+    if( ImGui::InputText("##Path", &top_dir_input_, ImGuiInputTextFlags_EnterReturnsTrue) ) {
+        try {
+            navigate_to(fs::u8path(top_dir_input_));
+        } catch( const std::exception &e ) {}
+    }
     ImGui::SameLine();
 
     ImGui::SetNextItemWidth(filter_width);
-    if( ImGui::BeginCombo("##Filter", current_filter_.c_str()) ) {
+    if( ImGui::BeginCombo("##Filter", filter_label(current_filter_).c_str()) ) {
         for( const auto &filter : filters_ )
-            if( ImGui::Selectable(filter.c_str(), filter == current_filter_) ) {
+            if( ImGui::Selectable(filter_label(filter).c_str(), filter == current_filter_) ) {
                 current_filter_ = filter;
                 load_directory();
             }
@@ -147,6 +175,12 @@ void FileChooser::render_file_list() {
     float availHeight = std::max(ImGui::GetContentRegionAvail().y - 60.0f, 100.0f);
 
     ImGui::BeginChild("FileListTable", ImVec2(0, availHeight), ImGuiChildFlags_Borders);
+
+    // 点击会触发导航或选中，而这两件事都会 clear()/重建 file_items_：
+    // 在遍历过程中做的话，迭代器和 item 引用当场失效（后面几列还要读 item）。
+    // 所以循环里只记录动作，等表格和子窗口都结束之后再执行。
+    fs::path pending_navigate;
+    fs::path pending_select;
 
     if( ImGui::BeginTable("FileTable", 4,
                           ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY |
@@ -187,42 +221,55 @@ void FileChooser::render_file_list() {
             }
         }
 
-        for (FileItem &item : file_items_) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
+        // 只提交可见行：几千个文件的目录就不必每帧几千次 TableNextRow/Text
+        ImGuiListClipper clipper;
+        clipper.Begin( (int)file_items_.size() );
+        while( clipper.Step() ) {
+            for( int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row ) {
+                FileItem &item = file_items_[row];
 
-            ImGui::Text("%c", item.is_directory ? '>' : ' ');
-            ImGui::SameLine();
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
 
-            ImGui::PushID(&item);
-            if (ImGui::Selectable(item.name.c_str(), item.is_selected,
-                                  ImGuiSelectableFlags_SpanAllColumns |
-                                  ImGuiSelectableFlags_AllowDoubleClick)) {
-                if (ImGui::IsMouseDoubleClicked(0)) {
-                    if (item.is_directory)
-                        navigate_to(current_directory_/item.path);
-                    else
-                        select_item(item.path);
-                } else
-                    single_click(item, ImGui::GetIO().KeyCtrl);
+                ImGui::Text("%c", item.is_directory ? '>' : ' ');
+                ImGui::SameLine();
+
+                ImGui::PushID(&item);
+                if (ImGui::Selectable(item.name.c_str(), item.is_selected,
+                                      ImGuiSelectableFlags_SpanAllColumns |
+                                      ImGuiSelectableFlags_AllowDoubleClick)) {
+                    if (ImGui::IsMouseDoubleClicked(0)) {
+                        if (item.is_directory)
+                            pending_navigate = current_directory_/item.path;
+                        else
+                            pending_select = item.path;
+                    } else
+                        single_click(item, ImGui::GetIO().KeyCtrl);
+                }
+                ImGui::PopID();
+
+                // 第二列：类型
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%s", item.type.c_str());
+
+                // 第三列：大小
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%s", item.size.c_str());
+
+                // 第四列：修改时间
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%s", item.modified_time.c_str());
             }
-            ImGui::PopID();
-
-            // 第二列：类型
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%s", item.type.c_str());
-
-            // 第三列：大小
-            ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%s", item.size.c_str());
-
-            // 第四列：修改时间
-            ImGui::TableSetColumnIndex(3);
-            ImGui::Text("%s", item.modified_time.c_str());
         }
         ImGui::EndTable();
     }
     ImGui::EndChild();
+
+    // 表格和子窗口都结束了，现在改 file_items_ 才是安全的
+    if( !pending_navigate.empty() )
+        navigate_to(pending_navigate);
+    else if( !pending_select.empty() )
+        select_item(pending_select);
 }
 
 void FileChooser::single_click( FileItem& item, bool ctrl_down ) {
@@ -332,13 +379,15 @@ bool FileChooser::render_sidebar() {
 
     ImGui::BeginChild("Sidebar", ImVec2(200, 0), ImGuiChildFlags_ResizeX);
 
+    fs::path pending_navigate;
+
     if( !quick_links_.empty() ) {
         ImGui::Text("常用位置");
         ImGui::Separator();
 
         for( const auto& link : quick_links_ )
             if( ImGui::Selectable(link.first.c_str()) )
-                navigate_to(link.second);
+                pending_navigate = link.second;
 
         ImGui::Separator();
     }
@@ -347,10 +396,14 @@ bool FileChooser::render_sidebar() {
         ImGui::Text("驱动器");
         for( const string& label : drive_labels )
             if( ImGui::Selectable(label.c_str()) )
-                navigate_to(label + "\\");
+                pending_navigate = label + "\\";
     }
 
     ImGui::EndChild();
+
+    if( !pending_navigate.empty() )
+        navigate_to(pending_navigate);
+
     return true;
 }
 
@@ -361,10 +414,19 @@ namespace {
         std::vector<std::pair<string, fs::path>> links;
 
         fs::path home;
+#ifdef _WIN32
+        // Windows 上窄环境变量是 ANSI 代码页，不是 UTF-8：用 u8path() 遇到中文用户名
+        // （C:\Users\张三）会抛 filesystem_error，用窄构造则要靠 ACP 往返。
+        // 直接取宽字符版本，编码问题彻底消失。
+        if( const wchar_t* home_w = _wgetenv(L"HOME") )
+            home = home_w;
+        else if( const wchar_t* profile_w = _wgetenv(L"USERPROFILE") )
+            home = profile_w;
+#else
+        // POSIX 上路径就是字节串，窄构造是恒等转换
         if( const char* home_env = std::getenv("HOME") )
             home = home_env;
-        else if( const char* userprofile = std::getenv("USERPROFILE") )
-            home = userprofile;
+#endif
 
         if( home.empty() )
             return links;
@@ -386,27 +448,25 @@ namespace {
         }
         return links;
     }
-}
 
-namespace {
     pair<string, uintmax_t> get_file_size(const fs::path &path) {
-        try {
-            uintmax_t size = fs::file_size(path);
-            static const char* units[] = {"B", "KB", "MB", "GB", "TB"};
-            int unit_index = 0;
-            double file_size = static_cast<double>(size);
-
-            while( file_size >= 1024.0 && unit_index < 4 ) {
-                file_size /= 1024.0;
-                unit_index ++;
-            }
-
-            std::stringstream ss;
-            ss << std::fixed << std::setprecision(1) << file_size << " " << units[unit_index];
-            return {ss.str(), size};
-        } catch (...) {
+        std::error_code ec;
+        const uintmax_t size = fs::file_size(path, ec);
+        if( ec )
             return {"未知", 0};
+
+        static const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+        int unit_index = 0;
+        double file_size = static_cast<double>(size);
+
+        while( file_size >= 1024.0 && unit_index < 4 ) {
+            file_size /= 1024.0;
+            unit_index ++;
         }
+
+        std::stringstream ss;
+        ss << std::fixed << std::setprecision(1) << file_size << " " << units[unit_index];
+        return {ss.str(), size};
     }
 
     std::string format_time(const fs::file_time_type &time) {
@@ -436,53 +496,62 @@ void FileChooser::load_directory() {
     file_name_input_.clear();
     quick_links_ = collect_quick_links();
 
-    try {
-        for( const fs::directory_entry &entry : fs::directory_iterator(current_directory_) ) {
-            if( !show_hidden_files_ ) {
-                std::string filename = entry.path().filename().u8string();
-                if (!filename.empty() && filename[0] == '.')
-                    continue;
-            }
+    std::error_code dir_ec;
+    fs::directory_iterator it( current_directory_, dir_ec ), end;
+    if( dir_ec ) {
+        sort_items();
+        return;
+    }
 
-            if (selection_mode_ == SelectionMode::DirectoriesOnly && !entry.is_directory())
-                continue;
+    for( ; it != end && !dir_ec; it.increment(dir_ec) ) {
+        const fs::directory_entry &entry = *it;
 
-            FileItem item;
-            item.path = entry.path().filename();
-            item.name = item.path.u8string();
-            item.is_directory = entry.is_directory();
-            item.is_selected = false;
+        std::error_code ec;
+        const bool is_directory = entry.is_directory(ec);   // 不抛异常的版本
+        if( ec )
+            continue;
 
-            if( item.is_directory )
-                item.type = "文件夹";
-            else if( entry.path().has_extension() ) {
-                item.type = entry.path().extension().u8string();
-                if( !item.type.empty() )
-                    item.type = item.type.substr(1); // 移除点
-                item.type = item.type + " 文件";
-            } else
-                item.type = "未知类型";
+        const fs::path file_name = entry.path().filename();
+        const string name = file_name.u8string();
 
-            if( !item.is_directory ) {
-                pair<string, uintmax_t> file_size = get_file_size(entry.path());
-                item.size = file_size.first;
-                item.size_bytes = file_size.second;
-            } else
-                item.size = "--";
+        if( !show_hidden_files_ && !name.empty() && name[0] == '.' )
+            continue;
 
-            try {
-                auto ftime = fs::last_write_time(entry.path());
-                item.modified = ftime;          // 排序用（原始时间）
-                item.modified_time = format_time(ftime);
-            } catch (...) {
-                item.modified_time = "未知";    // item.modified 保持默认值，排在最前/最后
-            }
+        if( selection_mode_ == SelectionMode::DirectoriesOnly && !is_directory )
+            continue;
 
-            if( item.is_directory || is_filter_match(entry.path()) )
-                file_items_.push_back(item);
-        }
-    } catch( const std::exception &e ) {
-        printf("Error loading directory: %s\n", e.what());
+        FileItem item;
+        item.path = file_name;
+        item.name = name;
+        item.is_directory = is_directory;
+        item.is_selected = false;
+
+        if( item.is_directory )
+            item.type = "文件夹";
+        else if( file_name.has_extension() ) {
+            item.type = file_name.extension().u8string();
+            if( !item.type.empty() )
+                item.type = item.type.substr(1); // 移除点
+            item.type = item.type + " 文件";
+        } else
+            item.type = "未知类型";
+
+        if( !item.is_directory ) {
+            pair<string, uintmax_t> file_size = get_file_size(entry.path());
+            item.size = file_size.first;
+            item.size_bytes = file_size.second;
+        } else
+            item.size = "--";
+
+        const fs::file_time_type ftime = fs::last_write_time(entry.path(), ec);
+        if( !ec ) {
+            item.modified = ftime;          // 排序用（原始时间）
+            item.modified_time = format_time(ftime);
+        } else
+            item.modified_time = "未知";    // item.modified 保持默认值，排在最前/最后
+
+        if( item.is_directory || is_filter_match(entry.path()) )
+            file_items_.push_back(item);
     }
 
     sort_items();
@@ -493,24 +562,28 @@ void FileChooser::sort_items() {
     const SortOrder order = sort_order_;
     const bool descending = (static_cast<int>(order) % 2) == 0;
 
-    // 只比较"排序键"本身（严格弱序）；升/降序在外层统一处理
+    // 严格弱序：不能用 descending ^ (a < b) —— 降序且键相等时 less(a,b) 和 less(b,a)
+    // 会同时为真（less(a,a) 也为真），std::sort 的前置条件被破坏（MSVC Debug 直接抛
+    // "invalid comparator"，Release 是未定义行为）。降序必须显式交换两侧。
     auto key_less = [order, descending]( const FileItem &a, const FileItem &b ) -> bool {
         if( a.is_directory != b.is_directory )
             return a.is_directory > b.is_directory;
         switch( order ) {
             case SortOrder::Name:
             case SortOrder::NameDes:
-                return descending ^ (a.name<b.name);
+                return descending ? (b.name < a.name) : (a.name < b.name);
             case SortOrder::Type:
             case SortOrder::TypeDes:
                 // 键值相同时用名称兜底，保证排序结果稳定
-                return a.type != b.type ? (descending^(a.type<b.type)) : (descending^(a.name<b.name));
+                if( a.type != b.type )
+                    return descending ? (b.type < a.type) : (a.type < b.type);
+                return descending ? (b.name < a.name) : (a.name < b.name);
             case SortOrder::Size:
             case SortOrder::SizeDes:
-                return descending ^ (a.size_bytes<b.size_bytes);
+                return descending ? (b.size_bytes < a.size_bytes) : (a.size_bytes < b.size_bytes);
             case SortOrder::Time:
             case SortOrder::TimeDes:
-                return descending ^ (a.modified<b.modified);
+                return descending ? (b.modified < a.modified) : (a.modified < b.modified);
             default:
                 return a.name < b.name;  // 新增枚举值时的兜底
         }
@@ -520,10 +593,17 @@ void FileChooser::sort_items() {
 }
 
 void FileChooser::navigate_to(const fs::path &path) {
-    if( fs::exists(path) && fs::is_directory(path) ) {
-        current_directory_ = fs::canonical(path);
-        load_directory();
-    }
+    std::error_code ec;
+    if( !fs::is_directory(path, ec) || ec )
+        return;
+
+    const fs::path canonical = fs::canonical(path, ec);
+    if( ec )
+        return;
+
+    current_directory_ = canonical;
+    selected_path_.clear();   // 换了目录，上一个目录里的选择就作废了
+    load_directory();
 }
 
 void FileChooser::navigate_up() {
@@ -532,14 +612,10 @@ void FileChooser::navigate_up() {
 }
 
 bool FileChooser::is_filter_match(const fs::path &path) const {
-    if( current_filter_ == "所有文件 (*.*)" )
+    if( current_filter_ == "*" )
         return true;
 
-    std::string ext = path.extension().u8string();
-    if( ext.empty() )
-        return false;
-
-    return current_filter_.find(ext.substr(1)) != std::string::npos;
+    return has_dot_suffix(path.filename().u8string(), current_filter_);
 }
 
 std::vector<fs::path> FileChooser::get_selected_files() const {
@@ -558,15 +634,11 @@ std::vector<fs::path> FileChooser::get_selected_files() const {
 void FileChooser::set_filter(const std::string &filter) {
     filters_ = { filter };
     current_filter_ = filter;
-    load_directory();
 }
 
 void FileChooser::set_filters(const std::vector<std::string> &filters) {
-    filters_ = filters.empty() ? vector<string>({"所有文件 (*.*)"}) : filters;
-    if (!filters_.empty()) {
-        current_filter_ = filters_[0];
-        load_directory();
-    }
+    filters_ = filters.empty() ? vector<string>({"*"}) : filters;
+    current_filter_ = filters_.front();
 }
 
 
